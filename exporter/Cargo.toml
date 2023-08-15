@@ -1,0 +1,30 @@
+[package]
+name = "eloverblik_exporter"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+serde = { version = "^1.0", features = ["derive"]}
+serde_json = "^1"
+log = "^0.4"
+tracing = "^0.1"
+tracing-subscriber = { version = "^0.3", features = ["env-filter"] }
+tracing-log = "^0.1"
+anyhow = "^1"
+thiserror = "^1.0"
+tokio = { version = "^1.28", features = ["full"] }
+futures = "^0.3"
+reqwest = { version = "^0.11", features = ["json"] }
+config = { version = "0.13.3", features = ["yaml"] }
+job_scheduler_ng = "2.0.4"
+chrono = "0.4.24"
+crossbeam = "0.8.2"
+flume = "0.10.14"
+diesel_migrations = "^2.0"
+diesel = { version = "^2.0", features = ["postgres", "chrono", "serde_json"]}
+eloverblik_client = { path = "../client"}
+
+[build-dependencies]
+vergen = { version = "8.1.3", features = ["build", "git", "gitcl"] }
