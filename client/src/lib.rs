@@ -1,5 +1,9 @@
 pub mod error;
+pub mod model;
+pub mod cache;
 
+use std::sync::Arc;
+use crossbeam::sync::ShardedLock;
 use reqwest::{Request, Response};
 use serde::{Deserialize, Serialize};
 use error::{Result, Error};
@@ -15,7 +19,7 @@ pub struct Client {
 
 #[derive(Clone, Debug)]
 struct ClientData {
-    pub token : Option<Token>
+    pub token : Option<Arc<ShardedLock<Token>>>
 }
 
 #[derive(Clone, Debug)]
@@ -28,11 +32,21 @@ struct Token {
 impl Client {
 
     // Limit to 2 queries every 60 seconds
-    async fn auth(&self) {
+    pub async fn auth(&self) -> Result<model::response::TokenResponse> {
         let mut req = Request::new(reqwest::Method::GET, format!("{}/api/token", BASE_URL).parse().unwrap());
         req.headers_mut().insert("Authorization", format!("Bearer {}", self.conf.refresh_token).parse().unwrap());
 
         let resp = self.check_response(self.http.execute(req).await);
+
+        match resp {
+            Ok(val) => {
+                let deserialised : Result<model::response::TokenResponse> = val.json().await.map_err(|err | err.into());
+                return deserialised;
+            }
+            Err(err) => {
+                return Err(err);
+            }
+        };
     }
 
     async fn prepare_http_request(&self, req : &mut Request) {
@@ -41,12 +55,12 @@ impl Client {
         }
 
         if self.data.token.is_some() {
-            if self.data.token.as_ref().unwrap().expires_in > 1 {
+            if chrono::Utc::now().timestamp() > self.data.token.as_ref().unwrap().read().unwrap().expires_in {
                 self.auth().await;
             }
         }
 
-        req.headers_mut().insert("Authorization", format!("Bearer {}", self.data.token.as_ref().unwrap().token).parse().unwrap());
+        req.headers_mut().insert("Authorization", format!("Bearer {}", self.data.token.as_ref().unwrap().read().unwrap().token).parse().unwrap());
     }
 
     // Handle rate limits
@@ -90,7 +104,7 @@ impl ClientBuilder {
 
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct Config {
-    refresh_token : String
+    pub refresh_token : String
 }
 
 pub fn new_default_client(conf : Config) -> Client {

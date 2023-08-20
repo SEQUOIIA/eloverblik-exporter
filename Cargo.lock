@@ -377,6 +377,7 @@ name = "eloverblik_client"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "crossbeam",
  "reqwest",
  "serde",
  "serde_json",
