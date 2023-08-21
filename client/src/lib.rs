@@ -1,19 +1,25 @@
 pub mod error;
 pub mod model;
 pub mod cache;
+pub mod types;
 
 use std::sync::Arc;
 use crossbeam::sync::ShardedLock;
+use log::debug;
 use reqwest::{Request, Response};
 use serde::{Deserialize, Serialize};
 use error::{Result, Error};
+use crate::cache::{Cache};
+use crate::types::cstring::CString;
 
 const BASE_URL : &'static str = "https://api.eloverblik.dk/customerapi";
+const CACHE_KEY : &'static str = "ACCESS_TOKEN";
 
 #[derive(Clone, Debug)]
 pub struct Client {
     http : reqwest::Client,
     conf : Config,
+    cache : Option<Arc<ShardedLock<Box<dyn Cache<CString>>>>>,
     data : ClientData
 }
 
@@ -49,18 +55,44 @@ impl Client {
         };
     }
 
-    async fn prepare_http_request(&self, req : &mut Request) {
-        if self.data.token.is_none() {
-            self.auth().await;
+    async fn store_token(&self, token : String) {
+        if let Some(ch) = self.cache.as_ref() {
+            let mut write_lock = ch.write().unwrap();
+            write_lock.put(CACHE_KEY, token.into(), None)
         }
+    }
 
-        if self.data.token.is_some() {
-            if chrono::Utc::now().timestamp() > self.data.token.as_ref().unwrap().read().unwrap().expires_in {
-                self.auth().await;
+    async fn prepare_http_request(&self, req : &mut Request) {
+        let mut token = "".to_owned();
+        match &self.cache {
+            None => {
+                debug!(target:"eloverblik_client::auth", "Skipping cache, getting new token");
+                let resp = self.auth().await.unwrap();
+                token = resp.result;
+            }
+            Some(ch) => {
+                let mut get_new_token = false;
+                {
+                    let lock = ch.read().unwrap();
+                    get_new_token = lock.has_expired(CACHE_KEY);
+                }
+
+                if get_new_token {
+                    debug!(target:"eloverblik_client::auth", "Skipping cache, getting new token");
+                    let resp = self.auth().await.unwrap();
+                    token = resp.result.clone();
+                    // token = "dummy".to_owned();
+                    let mut write_lock = ch.write().unwrap();
+                    write_lock.put(CACHE_KEY, token.clone().into(), None);
+                } else {
+                    debug!(target:"eloverblik_client::auth", "Using cache");
+                    let lock = ch.read().unwrap();
+                    token = lock.get(CACHE_KEY).unwrap().clone().into();
+                }
             }
         }
 
-        req.headers_mut().insert("Authorization", format!("Bearer {}", self.data.token.as_ref().unwrap().read().unwrap().token).parse().unwrap());
+        req.headers_mut().insert("Authorization", format!("Bearer {}", token).parse().unwrap());
     }
 
     // Handle rate limits
@@ -79,6 +111,14 @@ impl Client {
                 panic!("{}", err);
             }
         }
+    }
+
+    pub async fn get_metering_points(&self) {
+        let mut req = Request::new(reqwest::Method::GET, format!("{}/api/meteringpoints/meteringpoints", BASE_URL).parse().unwrap());
+        self.prepare_http_request(&mut req).await;
+        let resp = self.http.execute(req).await.unwrap();
+
+        println!("{}", resp.text().await.unwrap());
     }
 }
 
@@ -100,6 +140,11 @@ impl ClientBuilder {
         self.inner.conf = val;
         self
     }
+
+    pub fn add_cache(mut self, val : Box<dyn Cache<CString>>) -> ClientBuilder {
+        self.inner.cache = Some(Arc::new(ShardedLock::new(val)));
+        self
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
@@ -111,6 +156,7 @@ pub fn new_default_client(conf : Config) -> Client {
     Client {
         http: reqwest::Client::default(),
         conf,
+        cache: None,
         data: ClientData {
             token: None
         }
