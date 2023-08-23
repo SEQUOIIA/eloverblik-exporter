@@ -1,4 +1,5 @@
 use eloverblik_client::cache::DiskCache;
+use eloverblik_client::model::request::{GetMeteringDataTimeSeriesRequest, MeteringPoints};
 
 mod config;
 mod error;
@@ -17,7 +18,16 @@ async fn main() {
         }))
         .build();
 
-    client.get_metering_points().await;
+    let metering_points = client.get_metering_points().await.unwrap();
+    let first_meter_point = metering_points.result.last().unwrap();
+
+    let timeseries = client.get_metering_data_timeseries(GetMeteringDataTimeSeriesRequest {
+        metering_points: MeteringPoints {
+            metering_point: vec![first_meter_point.metering_point_id.clone()]
+        }
+    }, "2023-08-01", "2023-08-20", "Hour").await.unwrap();
+
+    println!("{:?}", timeseries);
 }
 
 

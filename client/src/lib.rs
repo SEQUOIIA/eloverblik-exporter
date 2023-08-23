@@ -10,6 +10,9 @@ use reqwest::{Request, Response};
 use serde::{Deserialize, Serialize};
 use error::{Result, Error};
 use crate::cache::{Cache};
+use crate::error::Error::ElOverblikRateLimited;
+use crate::model::request::{GetMeteringDataTimeSeriesRequest, GetMeteringPointChargesRequest};
+use crate::model::response::{GetMeteringDataTimeSeriesResponse, GetMeteringPointChargesResponse, GetMeteringPointsResponse};
 use crate::types::cstring::CString;
 
 const BASE_URL : &'static str = "https://api.eloverblik.dk/customerapi";
@@ -113,13 +116,39 @@ impl Client {
         }
     }
 
-    pub async fn get_metering_points(&self) {
+    pub async fn get_metering_points(&self) -> Result<GetMeteringPointsResponse> {
         let mut req = Request::new(reqwest::Method::GET, format!("{}/api/meteringpoints/meteringpoints", BASE_URL).parse().unwrap());
         self.prepare_http_request(&mut req).await;
-        let resp = self.http.execute(req).await.unwrap();
+        let resp = self.http.execute(req).await;
+        let checked_resp = self.check_response(resp).unwrap();
 
-        println!("{}", resp.text().await.unwrap());
+        checked_resp.json().await.map_err(|err| err.into())
     }
+
+    pub async fn get_metering_point_charges(&self, request_payload : GetMeteringPointChargesRequest) -> Result<GetMeteringPointChargesResponse> {
+        let mut req = self.http.request(reqwest::Method::POST, format!("{}/api/meteringpoints/meteringpoint/getcharges", BASE_URL))
+            .json(&request_payload)
+            .build().unwrap();
+        self.prepare_http_request(&mut req).await;
+
+        let resp = self.http.execute(req).await;
+        let checked_resp = self.check_response(resp).unwrap();
+
+        checked_resp.json().await.map_err(|err| err.into())
+    }
+
+    pub async fn get_metering_data_timeseries(&self, request_payload : GetMeteringDataTimeSeriesRequest, start_date : &str, end_date : &str, aggregation : &str) -> Result<GetMeteringDataTimeSeriesResponse> {
+        let mut req = self.http.request(reqwest::Method::POST, format!("{}/api/meterdata/gettimeseries/{}/{}/{}", BASE_URL, start_date, end_date, aggregation))
+            .json(&request_payload)
+            .build().unwrap();
+        self.prepare_http_request(&mut req).await;
+
+        let resp = self.http.execute(req).await;
+        let checked_resp = self.check_response(resp).unwrap();
+
+        checked_resp.json().await.map_err(|err| err.into())
+    }
+
 }
 
 pub struct ClientBuilder {
