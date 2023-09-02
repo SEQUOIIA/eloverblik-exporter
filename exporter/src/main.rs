@@ -1,8 +1,11 @@
 use eloverblik_client::cache::DiskCache;
 use eloverblik_client::model::request::{GetMeteringDataTimeSeriesRequest, MeteringPoints};
+use crate::store::fs::FsStore;
+use crate::store::{Store, StoreType};
 
 mod config;
 mod error;
+mod store;
 
 #[tokio::main]
 async fn main() {
@@ -27,7 +30,15 @@ async fn main() {
         }
     }, "2023-08-01", "2023-08-20", "Hour").await.unwrap();
 
-    println!("{:?}", timeseries);
+    let mut stores : Vec<Box<dyn Store>> = Vec::new();
+    stores.push(Box::new(FsStore {
+        path: "eloverblik-store".to_owned()
+    }));
+
+    for store in &stores {
+        store.put(StoreType::MeterDataTimeSeries(timeseries.result.last().unwrap().clone())).unwrap();
+    }
+
 }
 
 
