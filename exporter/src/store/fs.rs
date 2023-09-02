@@ -19,6 +19,10 @@ impl Store for FsStore {
             StoreType::MeterDataTimeSeries(resp) => {
                 file_name = resp.id.clone();
                 content = serde_json::to_vec(resp).unwrap();
+            },
+            StoreType::UsageTimeSeries{key, value} => {
+                file_name = key.clone();
+                content = serde_json::to_vec(value).unwrap();
             }
         }
 

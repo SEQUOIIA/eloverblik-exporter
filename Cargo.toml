@@ -1,3 +1,3 @@
 [workspace]
 
-members = ["exporter", "client"]
+members = ["exporter", "eloverblik_client", "energidataservice_client"]

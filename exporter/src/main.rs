@@ -1,11 +1,14 @@
 use eloverblik_client::cache::DiskCache;
 use eloverblik_client::model::request::{GetMeteringDataTimeSeriesRequest, MeteringPoints};
+use energidataservice_client::model::request::ElSpotPricesRequest;
+use crate::model::UsageTimeSeries;
 use crate::store::fs::FsStore;
 use crate::store::{Store, StoreType};
 
 mod config;
 mod error;
 mod store;
+mod model;
 
 #[tokio::main]
 async fn main() {
@@ -21,6 +24,9 @@ async fn main() {
         }))
         .build();
 
+    let eds_client = energidataservice_client::new_builder()
+        .build();
+
     let metering_points = client.get_metering_points().await.unwrap();
     let first_meter_point = metering_points.result.last().unwrap();
 
@@ -28,15 +34,30 @@ async fn main() {
         metering_points: MeteringPoints {
             metering_point: vec![first_meter_point.metering_point_id.clone()]
         }
-    }, "2023-08-01", "2023-08-20", "Hour").await.unwrap();
+    }, "2023-08-01", "2023-08-31", "Hour").await.unwrap();
 
     let mut stores : Vec<Box<dyn Store>> = Vec::new();
     stores.push(Box::new(FsStore {
         path: "eloverblik-store".to_owned()
     }));
 
+    let hourly = UsageTimeSeries::new_hourly(timeseries.result.last().unwrap().clone());
+    let daily = UsageTimeSeries::new_daily(timeseries.result.last().unwrap().clone());
+
+    let prices = eds_client.get_elspotprices(ElSpotPricesRequest {
+        limit: Some(0),
+        timezone: Some("UTC".to_owned()),
+        start: Some("2023-08-01".to_owned()),
+        end: Some("2023-08-31".to_owned()),
+        filter: Some("{\"PriceArea\":[\"DK2\"]}".to_owned()),
+        sort: Some("HourUTC".to_owned()),
+    }).await.unwrap();
+
     for store in &stores {
         store.put(StoreType::MeterDataTimeSeries(timeseries.result.last().unwrap().clone())).unwrap();
+        store.put(StoreType::UsageTimeSeries {key: "hourly".to_owned(), value: hourly.clone()}).unwrap();
+        store.put(StoreType::UsageTimeSeries {key: "daily".to_owned(), value: daily.clone()}).unwrap();
+        store.put(StoreType::String {key: "prices".to_owned(), value: serde_json::to_string(&prices).unwrap()}).unwrap();
     }
 
 }
