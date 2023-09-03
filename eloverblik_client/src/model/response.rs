@@ -69,6 +69,38 @@ pub struct GetMeteringPointChargesResponseResultResult {
     pub tariffs: Vec<GetMeteringPointChargesResponseResultResultTariff>,
 }
 
+impl GetMeteringPointChargesResponseResultResult {
+    pub fn get_full_price(&self, cost : f64, pos : String, kwh : f64) -> f64 {
+        let mut total = cost;
+
+        for tariff in &self.tariffs {
+            match tariff.name.as_str() {
+                "Transmissions nettarif" => {
+                    total = total + (tariff.prices.last().unwrap().price * kwh);
+                },
+                "Systemtarif" => {
+                    total = total + (tariff.prices.last().unwrap().price * kwh);
+                },
+                "Elafgift" => {
+                    total = total + (tariff.prices.last().unwrap().price * kwh);
+                },
+                "Nettarif C time" => {
+                    for price in &tariff.prices {
+                        if price.position.eq(&pos) {
+                            total = total + (price.price * kwh);
+                        }
+                    }
+                },
+
+
+                _ => {}
+            }
+        }
+
+        total
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GetMeteringPointChargesResponseResultResultSubscription {
